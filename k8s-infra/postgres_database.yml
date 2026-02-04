@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: o11y-k8s-talk
+
+--- 
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: o11y-k8s-talk
+type: Opaque
+stringData:
+  POSTGRES_DB: disbursement_demo
+  POSTGRES_USER: demo
+  POSTGRES_PASSWORD: a_super_secure_password
+
+--- 
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  namespace: o11y-k8s-talk
+spec:
+  capacity: 
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  hostPath:
+    path: /data/postgres
+    type: DirectoryOrCreate
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: o11y-k8s-talk
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 2Gi
+  volumeName: postgres-pv
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-database
+  namespace: o11y-k8s-talk
+spec:
+  selector:
+    matchLabels:
+      app: postgres-database
+  template:
+    metadata:
+      labels:
+        app: postgres-database
+    spec:
+      containers:
+      - name: postgres-database
+        image: postgres:16-alpine
+        envFrom:
+          - secretRef:
+              name: postgres-secret
+        volumeMounts:
+          - name: pgdata
+            mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          tcpSocket:
+            port: 5432
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 5432
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+apiVersion: v1 
+kind: Service
+metadata:
+  name: postgres
+  namespace: o11y-k8s-talk
+spec:
+  selector:
+    app: postgres 
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
