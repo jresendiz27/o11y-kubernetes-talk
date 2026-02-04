@@ -8,5 +8,4 @@ stop_cluster:
 	minikube stop
 
 destroy_cluster:
-	minikube destroy
-	
+	minikube delete
