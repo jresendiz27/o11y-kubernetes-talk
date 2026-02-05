@@ -9,6 +9,11 @@ kind: Secret
 metadata:
   name: postgres-secret
   namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
 type: Opaque
 stringData:
   POSTGRES_DB: disbursement_demo
@@ -20,13 +25,17 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: postgres-pv
-  namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
 spec:
   capacity: 
     storage: 2Gi
   accessModes:
     - ReadWriteOnce
-  storageClassName: manual
+  storageClassName: standard
   hostPath:
     path: /data/postgres
     type: DirectoryOrCreate
@@ -38,6 +47,11 @@ kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
   namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
 spec:
   accessModes:
     - ReadWriteOnce
@@ -48,11 +62,34 @@ spec:
   volumeName: postgres-pv
 
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
+data:
+  postgresql.conf: |
+    log_statement = 'all'
+    log_duration = on
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%,app=%a,client=%h '
+    shared_buffers = 128MB
+    max_connections = 100
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres-database
   namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
 spec:
   selector:
     matchLabels:
@@ -65,35 +102,78 @@ spec:
       containers:
       - name: postgres-database
         image: postgres:16-alpine
+        securityContext:
+          runAsUser: 999 # postgres
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
         envFrom:
           - secretRef:
               name: postgres-secret
         volumeMounts:
           - name: pgdata
             mountPath: /var/lib/postgresql/data
+            subPath: pgdata # avoiding directory not empty error
         readinessProbe:
-          tcpSocket:
-            port: 5432
+          exec:
+            command:
+              - "/bin/sh -c pg_isready -U demo -d disbursement_demo"
           initialDelaySeconds: 5
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
         livenessProbe:
-          tcpSocket:
-            port: 5432
-          initialDelaySeconds: 10
+          exec:
+            command:
+              - "/bin/sh -c pg_isready -U demo -d disbursement_demo"
+          initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           requests:
-            memory: "128Mi"
+            memory: "256Mi"
             cpu: "250m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "1Gi"
+            cpu: "1000m"
         ports:
         - containerPort: 5432
+      - name: postgres-exporter
+        image: prometheuscommunity/postgres-exporter:latest
+        env:
+          - name: POSTGRES_USER
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_USER
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_PASSWORD
+          - name: POSTGRES_DB
+            valueFrom:
+              secretKeyRef:
+                name: postgres-secret
+                key: POSTGRES_DB
+          - name: DATA_SOURCE_NAME
+            value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable"
+        ports:
+          - containerPort: 9187
+            name: metrics
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m
       volumes:
         - name: pgdata
           persistentVolumeClaim:
             claimName: postgres-pvc
+
 
 ---
 apiVersion: v1 
@@ -101,12 +181,16 @@ kind: Service
 metadata:
   name: postgres
   namespace: o11y-k8s-talk
+  labels:
+    app: postgres-database
+    component: database
+    owner: disbursement-team
+    business_unit: disbursement
 spec:
   selector:
-    app: postgres 
+    app: postgres-database
   ports:
     - name: postgres
       port: 5432
       targetPort: 5432
   type: ClusterIP
-
