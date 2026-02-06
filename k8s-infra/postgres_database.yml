@@ -20,28 +20,6 @@ stringData:
   POSTGRES_DB: disbursement_demo
   POSTGRES_USER: demo
   POSTGRES_PASSWORD: a_super_secure_password
-
---- 
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pv
-  labels:
-    app: postgres-database
-    component: database
-    owner: disbursement-team
-    business_unit: disbursement
-    part-of: o11y-k8s-talk
-spec:
-  capacity: 
-    storage: 2Gi
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: manual
-  hostPath:
-    path: /data/postgres
-    type: DirectoryOrCreate
-
 ---
 
 apiVersion: v1
@@ -58,7 +36,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: manual
+  storageClassName: standard
   resources:
     requests:
       storage: 2Gi
@@ -145,7 +123,7 @@ spec:
             value: "-E UTF8 --locale=en_US.utf8"
         volumeMounts:
           - name: pgdata
-            mountPath: /var/lib/postgresql/data
+            mountPath: /var/lib/postgresql/pgdata
             subPath: pgdata
         startupProbe:
           exec:
@@ -227,7 +205,6 @@ spec:
         - name: pgdata
           persistentVolumeClaim:
             claimName: postgres-pvc
-
 
 ---
 apiVersion: v1 
