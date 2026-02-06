@@ -38,6 +38,22 @@ build-iPhoneSimulator/
 /doc/
 /rdoc/
 
+## Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+vendor/
+coverage.out
+
+## LLM Context
+llm_context/
+
 ## Environment normalization:
 /.bundle/
 /vendor/bundle
