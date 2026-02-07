@@ -30,6 +30,8 @@ docker-build: ## Build Docker image
 docker-run: ## Run Docker container
 	docker run -p 8080:8080 --rm sign-in-service:latest
 
+docker-push:
+	docker tag sign-in-service:latest localhost:5000/sign-in-service && docker push localhost:5000/sign-in-service:latest
 clean: ## Clean build artifacts
 	rm -rf bin/
 	rm -f coverage.out

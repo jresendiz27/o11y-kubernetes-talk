@@ -4,8 +4,21 @@ start_cluster:
 apply_postgres:
 	kubectl apply -f k8s-infra/postgres_database.yml
 
+apply_sign_in_service:
+	kubectl apply -f sign-in-service/k8s-infra/deployment.yml
+
 stop_cluster:
 	minikube stop
 
 destroy_cluster:
 	minikube delete
+
+enable_docker_registry:
+	kubectl port-forward -n kube-system service/registry 5000:80
+
+setup_volumes_path:
+	@for node in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do \
+  	 	echo "Creating directory on node: $$node"; \
+  		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/"; \
+  	done; \
+  	echo "Directories created on all nodes"

@@ -11,6 +11,7 @@ minikube start -n 3 \
 echo "Enabling addons..."
 minikube addons enable metrics-server
 minikube addons enable storage-provisioner
+minikube addons enable registry
 
 echo ""
 echo "Cluster status:"

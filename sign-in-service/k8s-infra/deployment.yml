@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: o11y-k8s-talk
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sign-in-service
+  namespace: o11y-k8s-talk
+  labels:
+    app: sign-in-service
+    component: service
+    owner: merchant-team
+    business_unit: merchant
+    part-of: o11y-k8s-talk
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: sign-in-service
+  template:
+    metadata:
+      labels:
+        app: sign-in-service
+        component: service
+        owner: merchant-team
+        business_unit: merchant
+        part-of: o11y-k8s-talk
+    spec:
+      containers:
+        - name: sign-in-service
+          image: localhost:5000/sign-in-service:latest
+          ports:
+            - containerPort: 8080
