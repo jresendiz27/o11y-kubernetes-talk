@@ -49,6 +49,26 @@ spec:
               value: "otel-collector:4318"
             - name: OTEL_SERVICE_NAME
               value: "sign-in-service"
+            - name: DB_HOST
+              value: "postgres"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              value: "startup_centralized_database"
+            - name: LOG_USER_DATA
+              value: "true"
+            - name: NUM_GENERATORS
+              value: "5"
           livenessProbe:
             httpGet:
               path: /health
@@ -67,14 +87,13 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              memory: "64Mi"
+              memory: "128Mi"
               cpu: "100m"
             limits:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "500m"
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             capabilities:

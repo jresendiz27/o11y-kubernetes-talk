@@ -17,7 +17,7 @@ metadata:
     part-of: o11y-k8s-talk
 type: Opaque
 stringData:
-  POSTGRES_DB: disbursement_demo
+  POSTGRES_DB: startup_centralized_database
   POSTGRES_USER: demo
   POSTGRES_PASSWORD: a_super_secure_password
 ---

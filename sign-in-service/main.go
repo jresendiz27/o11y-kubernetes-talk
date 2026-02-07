@@ -12,6 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/database"
+	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/generator"
+	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/repository"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -27,6 +30,11 @@ const (
 	serviceVersion = "1.0.0"
 )
 
+var (
+	db       *database.Database
+	userRepo *repository.UserRepository
+)
+
 func main() {
 	ctx := context.Background()
 
@@ -40,6 +48,40 @@ func main() {
 			log.Printf("Failed to shutdown tracer: %v", err)
 		}
 	}()
+
+	// Initialize database connection
+	dbConfig := database.Config{
+		Host:     getEnv("DB_HOST", "postgres"),
+		Port:     getEnv("DB_PORT", "5432"),
+		User:     getEnv("DB_USER", "demo"),
+		Password: getEnv("DB_PASSWORD", "a_super_secure_password"),
+		DBName:   getEnv("DB_NAME", "startup_centralized_database"),
+	}
+
+	db, err = database.New(ctx, dbConfig)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Failed to close database: %v", err)
+		}
+	}()
+
+	// Initialize repository
+	userRepo = repository.NewUserRepository(db)
+
+	// Ensure database schema
+	if err := userRepo.EnsureSchema(ctx); err != nil {
+		log.Fatalf("Failed to ensure database schema: %v", err)
+	}
+
+	// Create context with cancellation for generators
+	genCtx, cancelGen := context.WithCancel(ctx)
+	defer cancelGen()
+
+	// Start user generators
+	generator.StartGenerators(genCtx, userRepo)
 
 	// Create router
 	r := chi.NewRouter()
@@ -82,6 +124,10 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server")
+
+	// Cancel generator context
+	cancelGen()
+
 	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -135,11 +181,23 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	tracer := otel.Tracer(serviceName)
 
 	// Create a span for the health check
-	_, span := tracer.Start(ctx, "health-check")
+	ctx, span := tracer.Start(ctx, "health-check")
 	defer span.End()
 
-	// Simulate some work
-	time.Sleep(5 * time.Millisecond)
+	// Check database health
+	if db != nil {
+		if err := db.HealthCheck(ctx); err != nil {
+			log.Printf("Database health check failed: %v", err)
+			span.RecordError(err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			response := `{"status":"unhealthy","service":"sign-in-service","version":"1.0.0","error":"database_unavailable"}`
+			if _, writeErr := w.Write([]byte(response)); writeErr != nil {
+				log.Printf("Failed to write health response: %v", writeErr)
+			}
+			return
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
