@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	minWaitSeconds = 30
-	maxWaitSeconds = 180 // 3 minutes
+	minWaitSeconds = 120
+	maxWaitSeconds = 360 // 3 minutes
 )
 
 type UserGenerator struct {
@@ -51,8 +51,10 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 	address := g.faker.Address()
 	internet := g.faker.Internet()
 
+	var randEmail = fmt.Sprintf("%s_%d_%s", person.FirstName(), rand.Intn(100), internet.Email())
+
 	user := &models.User{
-		Email:        internet.Email(),
+		Email:        randEmail,
 		Name:         person.Name(),
 		PasswordHash: internet.Password(),
 		Phone:        person.Contact().Phone,

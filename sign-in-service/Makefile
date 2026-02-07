@@ -32,6 +32,7 @@ docker-run: ## Run Docker container
 
 docker-push:
 	docker tag sign-in-service:latest localhost:5000/sign-in-service && docker push localhost:5000/sign-in-service:latest
+
 clean: ## Clean build artifacts
 	rm -rf bin/
 	rm -f coverage.out

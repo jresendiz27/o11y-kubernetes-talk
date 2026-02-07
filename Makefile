@@ -1,6 +1,9 @@
 start_cluster:
 	sh bin/start_minikube.sh
 
+wipe_namespace:
+	kubectl delete namespace o11y-k8s-talk
+
 apply_postgres:
 	kubectl apply -f k8s-infra/postgres_database.yml
 
