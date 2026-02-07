@@ -29,8 +29,76 @@ spec:
         business_unit: merchant
         part-of: o11y-k8s-talk
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: sign-in-service
           image: localhost:5000/sign-in-service:latest
+          imagePullPolicy: Always
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "otel-collector:4318"
+            - name: OTEL_SERVICE_NAME
+              value: "sign-in-service"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sign-in-service
+  namespace: o11y-k8s-talk
+  labels:
+    app: sign-in-service
+    component: service
+    owner: merchant-team
+    business_unit: merchant
+    part-of: o11y-k8s-talk
+spec:
+  type: ClusterIP
+  selector:
+    app: sign-in-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
