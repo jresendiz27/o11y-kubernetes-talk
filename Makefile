@@ -77,6 +77,7 @@ demo_up: start_cluster enable_docker_registry_bg setup_volumes_path apply_postgr
 		MIN_DELAY_SECONDS="$(MIN_DELAY_SECONDS)" \
 		MAX_DELAY_SECONDS="$(MAX_DELAY_SECONDS)"
 	kubectl -n o11y-k8s-talk set env deployment/sign-in-service \
-		OTEL_RESOURCE_ATTRIBUTES="service.version=$(GIT_SHA),vcs.revision=$(GIT_SHA),deployment.environment=$(DEPLOY_ENV)"
+		OTEL_RESOURCE_ATTRIBUTES="service.version=$(GIT_SHA),vcs.revision=$(GIT_SHA),deployment.environment=$(DEPLOY_ENV)" \
+		FAILURE_RATE="$(FAILURE_RATE)"
 	kubectl -n o11y-k8s-talk rollout status deployment/notifications-service
 	kubectl -n o11y-k8s-talk rollout status deployment/sign-in-service

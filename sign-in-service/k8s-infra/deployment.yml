@@ -73,6 +73,8 @@ spec:
               value: "5"
             - name: NOTIFICATIONS_SERVICE_URL
               value: "http://notifications-service:8081"
+            - name: FAILURE_RATE
+              value: "0"
           livenessProbe:
             httpGet:
               path: /health

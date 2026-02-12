@@ -32,6 +32,7 @@ type UserGenerator struct {
 	faker                   faker.Faker
 	tracer                  trace.Tracer
 	logUserData             bool
+	failureRate             float64
 	notificationsServiceURL string
 	httpClient              *http.Client
 }
@@ -40,6 +41,17 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 	logUserData := false
 	if val := os.Getenv("LOG_USER_DATA"); val == "true" {
 		logUserData = true
+	}
+
+	failureRate := 0.0
+	if val := os.Getenv("FAILURE_RATE"); val != "" {
+		if parsed, err := strconv.ParseFloat(val, 64); err == nil && parsed >= 0 && parsed <= 1 {
+			failureRate = parsed
+		} else if err != nil {
+			log.Printf("Invalid FAILURE_RATE %q, using 0.0: %v", val, err)
+		} else {
+			log.Printf("FAILURE_RATE out of range %q, using 0.0 (expected 0..1)", val)
+		}
 	}
 
 	notifURL := os.Getenv("NOTIFICATIONS_SERVICE_URL")
@@ -52,6 +64,7 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 		faker:                   faker.New(),
 		tracer:                  otel.Tracer("sign-in-service"),
 		logUserData:             logUserData,
+		failureRate:             failureRate,
 		notificationsServiceURL: notifURL,
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
@@ -63,6 +76,21 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 	ctx, span := g.tracer.Start(ctx, "generate-and-insert-user")
 	defer span.End()
+
+	// Simulate sign-in-service failures for demo/o11y purposes.
+	// This intentionally fails a fraction of generator executions so errors
+	// can be correlated by service.version in the observability stack.
+	if g.failureRate > 0 && rand.Float64() < g.failureRate {
+		err := fmt.Errorf("simulated sign-in-service failure (FAILURE_RATE=%.2f)", g.failureRate)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "simulated failure")
+		span.SetAttributes(
+			attribute.Bool("sign_in.simulated_failure", true),
+			attribute.Float64("sign_in.failure_rate", g.failureRate),
+		)
+		log.Printf("Failed to generate user (simulated): %v", err)
+		return err
+	}
 
 	person := g.faker.Person()
 	address := g.faker.Address()
@@ -200,6 +228,9 @@ func StartGenerators(ctx context.Context, repo *repository.UserRepository) {
 			numGenerators = n
 		}
 	}
+
+	// Seed global RNG once for non-deterministic demo behavior.
+	rand.Seed(time.Now().UnixNano())
 
 	log.Printf("Starting %d user generators", numGenerators)
 
