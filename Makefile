@@ -50,6 +50,8 @@ enable_docker_registry:
 	kubectl port-forward -n kube-system service/registry 5000:80
 
 enable_docker_registry_bg:
+	echo "----------"
+	echo "Attempting to enable minikube port-forward (Container Registry)"
 	@mkdir -p tmp
 	@if [ -f tmp/registry-port-forward.pid ] && kill -0 "$$(cat tmp/registry-port-forward.pid)" 2>/dev/null; then \
 		echo "Registry port-forward already running (pid: $$(cat tmp/registry-port-forward.pid))"; \
@@ -59,6 +61,7 @@ enable_docker_registry_bg:
 		echo $$! > tmp/registry-port-forward.pid; \
 		echo "Registry port-forward started (pid: $$(cat tmp/registry-port-forward.pid))"; \
 	fi
+	echo "----------"
 
 setup_volumes_path:
 	@for node in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do \
@@ -67,7 +70,7 @@ setup_volumes_path:
   	done; \
   	echo "Directories created on all nodes"
 
-demo_up: start_cluster enable_docker_registry_bg setup_volumes_path apply_postgres docker-build-sign-in docker-push-sign-in docker-build-notifications docker-push-notifications apply_notifications_service apply_sign_in_service
+demo_up: start_cluster setup_volumes_path apply_postgres enable_docker_registry_bg docker-build-sign-in docker-push-sign-in docker-build-notifications docker-push-notifications apply_notifications_service apply_sign_in_service
 	@echo "Deploying SHA: $(GIT_SHA)"
 	kubectl -n o11y-k8s-talk set image deployment/notifications-service notifications-service=localhost:5000/notifications-service:$(GIT_SHA)
 	kubectl -n o11y-k8s-talk set image deployment/sign-in-service sign-in-service=localhost:5000/sign-in-service:$(GIT_SHA)
