@@ -1,0 +1,44 @@
+# Minikube-friendly kube-prometheus-stack values.
+# Installs: Prometheus Operator, Prometheus, Grafana, node-exporter, kube-state-metrics.
+
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: admin
+
+  # Add Loki + Tempo data sources so Grafana is ready out-of-the-box.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData:
+        maxLines: 1000
+    - name: Tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      jsonData:
+        httpMethod: GET
+
+prometheus:
+  prometheusSpec:
+    retention: 2h
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+alertmanager:
+  enabled: false
+
+# Minikube clusters commonly don't expose these reliably.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false

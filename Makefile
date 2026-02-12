@@ -6,6 +6,7 @@ DEPLOY_ENV ?= development
 FAILURE_RATE ?= 0.15
 MIN_DELAY_SECONDS ?= 2
 MAX_DELAY_SECONDS ?= 5
+O11Y_NS ?= monitoring
 
 wipe_namespace:
 	kubectl delete namespace o11y-k8s-talk
@@ -69,6 +70,40 @@ setup_volumes_path:
   		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/"; \
   	done; \
   	echo "Directories created on all nodes"
+
+helm_repos:
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo add grafana https://grafana.github.io/helm-charts
+	helm repo add grafana-community https://grafana-community.github.io/helm-charts
+	helm repo update
+
+o11y_up: helm_repos
+	kubectl create namespace $(O11Y_NS) --dry-run=client -o yaml | kubectl apply -f -
+	helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+		-n $(O11Y_NS) -f k8s-infra/o11y/kube-prometheus-stack.values.yaml
+	helm upgrade --install loki grafana/loki \
+		-n $(O11Y_NS) -f k8s-infra/o11y/loki.values.yaml
+	helm upgrade --install tempo grafana-community/tempo \
+		-n $(O11Y_NS) -f k8s-infra/o11y/tempo.values.yaml
+	helm upgrade --install alloy grafana/alloy \
+		-n $(O11Y_NS) -f k8s-infra/o11y/alloy.values.yaml
+	kubectl apply -f k8s-infra/o11y/otel-collector-externalname.yaml
+
+o11y_down:
+	helm uninstall alloy -n $(O11Y_NS) || true
+	helm uninstall tempo -n $(O11Y_NS) || true
+	helm uninstall loki -n $(O11Y_NS) || true
+	helm uninstall kube-prometheus-stack -n $(O11Y_NS) || true
+
+o11y_port_forward:
+	@echo "Grafana: http://localhost:3000 (admin/admin)"
+	kubectl -n $(O11Y_NS) port-forward svc/kube-prometheus-stack-grafana 3000:80
+
+linkerd_up:
+	bash bin/linkerd_up.sh
+
+linkerd_inject:
+	bash bin/linkerd_inject_ns.sh o11y-k8s-talk
 
 demo_up: start_cluster setup_volumes_path apply_postgres enable_docker_registry_bg docker-build-sign-in docker-push-sign-in docker-build-notifications docker-push-notifications apply_notifications_service apply_sign_in_service
 	@echo "Deploying SHA: $(GIT_SHA)"

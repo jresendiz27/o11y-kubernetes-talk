@@ -1,0 +1,29 @@
+# Loki chart (grafana/loki) configured for a simple Minikube demo.
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  useTestSchema: true
+  storage:
+    type: filesystem
+  tracing:
+    enabled: false
+
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+lokiCanary:
+  enabled: false
+
+minio:
+  enabled: false
