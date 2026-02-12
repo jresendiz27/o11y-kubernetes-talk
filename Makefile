@@ -1,5 +1,4 @@
-start_cluster:
-	sh bin/start_minikube.sh
+.PHONY: help start_cluster wipe_namespace apply_postgres apply_notifications_service apply_sign_in_service docker-build-notifications docker-push-notifications docker-build-sign-in docker-push-sign-in stop_cluster destroy_cluster enable_docker_registry_bg setup_volumes_path helm_repos o11y_up o11y_down o11y_port_forward linkerd_up linkerd_inject demo_up
 
 GIT_SHA := $(shell git rev-parse --short HEAD)
 DEPLOY_ENV ?= development
@@ -7,6 +6,15 @@ FAILURE_RATE ?= 0.15
 MIN_DELAY_SECONDS ?= 2
 MAX_DELAY_SECONDS ?= 5
 O11Y_NS ?= monitoring
+
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Available targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+start_cluster:
+	sh bin/start_minikube.sh
 
 wipe_namespace:
 	kubectl delete namespace o11y-k8s-talk
@@ -19,9 +27,6 @@ apply_sign_in_service:
 
 apply_notifications_service:
 	kubectl apply -f notifications-service/k8s-infra/deployment.yml
-
-git_sha:
-	@echo $(GIT_SHA)
 
 docker-build-notifications:
 	docker build -t notifications-service:latest notifications-service
@@ -46,9 +51,6 @@ stop_cluster:
 
 destroy_cluster:
 	minikube delete
-
-enable_docker_registry:
-	kubectl port-forward -n kube-system service/registry 5000:80
 
 enable_docker_registry_bg:
 	echo "----------"
