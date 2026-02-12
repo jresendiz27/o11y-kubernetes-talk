@@ -1,6 +1,8 @@
 start_cluster:
 	sh bin/start_minikube.sh
 
+GIT_SHA := $(shell git rev-parse --short HEAD)
+
 wipe_namespace:
 	kubectl delete namespace o11y-k8s-talk
 
@@ -13,11 +15,23 @@ apply_sign_in_service:
 apply_notifications_service:
 	kubectl apply -f notifications-service/k8s-infra/deployment.yml
 
+git_sha:
+	@echo $(GIT_SHA)
+
 docker-build-notifications:
 	$(MAKE) -C notifications-service docker-build
 
 docker-push-notifications:
 	$(MAKE) -C notifications-service docker-push
+
+docker-build-sign-in:
+	docker build -t sign-in-service:latest sign-in-service
+	docker tag sign-in-service:latest localhost:5000/sign-in-service:latest
+	docker tag sign-in-service:latest localhost:5000/sign-in-service:$(GIT_SHA)
+
+docker-push-sign-in:
+	docker push localhost:5000/sign-in-service:latest
+	docker push localhost:5000/sign-in-service:$(GIT_SHA)
 
 stop_cluster:
 	minikube stop
