@@ -49,6 +49,8 @@ spec:
               value: "otel-collector:4318"
             - name: OTEL_SERVICE_NAME
               value: "sign-in-service"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.version=dev,vcs.revision=dev,deployment.environment=development"
             - name: DB_HOST
               value: "postgres"
             - name: DB_PORT

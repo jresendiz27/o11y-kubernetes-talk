@@ -151,13 +151,27 @@ func initTracer(ctx context.Context) (func(context.Context) error, error) {
 	}
 
 	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(serviceVersion),
-		),
+		// Platform-first approach:
+		// - Allow OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES to drive service metadata.
+		// - Provide safe fallbacks for local runs.
+		resource.WithFromEnv(),
+		resource.WithProcess(),
+		resource.WithOS(),
+		resource.WithContainer(),
+		resource.WithHost(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	fallbackRes := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceName(serviceName),
+		semconv.ServiceVersion(serviceVersion),
+	)
+	res, err = resource.Merge(fallbackRes, res) // env/detectors override fallbacks
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge resource: %w", err)
 	}
 
 	tp := sdktrace.NewTracerProvider(

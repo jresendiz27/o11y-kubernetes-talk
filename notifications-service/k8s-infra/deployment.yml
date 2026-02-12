@@ -49,6 +49,8 @@ spec:
               value: "http://otel-collector:4318"
             - name: OTEL_SERVICE_NAME
               value: "notifications-service"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.version=dev,vcs.revision=dev,deployment.environment=development"
             - name: FAILURE_RATE
               value: "0.15"
             - name: MIN_DELAY_SECONDS

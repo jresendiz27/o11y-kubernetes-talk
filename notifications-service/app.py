@@ -1,6 +1,5 @@
 """Notifications Service - Emulates email sending with OpenTelemetry tracing."""
 
-import json
 import logging
 import os
 import random
@@ -56,12 +55,17 @@ def init_tracer() -> TracerProvider:
     # The OTLP HTTP exporter expects the full base URL (scheme://host:port)
     endpoint_url = f"{otel_endpoint}/v1/traces"
 
-    resource = Resource.create(
+    # Platform-first approach:
+    # - Allow OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES to drive service metadata.
+    # - Provide safe fallbacks for local runs.
+    env_resource = Resource.create()
+    fallback_resource = Resource.create(
         {
             ResourceAttributes.SERVICE_NAME: SERVICE_NAME,
             ResourceAttributes.SERVICE_VERSION: SERVICE_VERSION,
         }
     )
+    resource = fallback_resource.merge(env_resource)  # env overrides fallbacks
 
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=endpoint_url)
