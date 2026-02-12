@@ -7,23 +7,23 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sign-in-service
+  name: notifications-service
   namespace: o11y-k8s-talk
   labels:
-    app: sign-in-service
+    app: notifications-service
     component: service
     owner: merchant-team
     business_unit: merchant
     part-of: o11y-k8s-talk
 spec:
-  replicas: 10
+  replicas: 2
   selector:
     matchLabels:
-      app: sign-in-service
+      app: notifications-service
   template:
     metadata:
       labels:
-        app: sign-in-service
+        app: notifications-service
         component: service
         owner: merchant-team
         business_unit: merchant
@@ -35,42 +35,26 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       containers:
-        - name: sign-in-service
-          image: localhost:5000/sign-in-service:latest
+        - name: notifications-service
+          image: localhost:5000/notifications-service:latest
           imagePullPolicy: Always
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 8081
               protocol: TCP
           env:
             - name: PORT
-              value: "8080"
+              value: "8081"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "otel-collector:4318"
+              value: "http://otel-collector:4318"
             - name: OTEL_SERVICE_NAME
-              value: "sign-in-service"
-            - name: DB_HOST
-              value: "postgres"
-            - name: DB_PORT
-              value: "5432"
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_USER
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_PASSWORD
-            - name: DB_NAME
-              value: "startup_centralized_database"
-            - name: LOG_USER_DATA
-              value: "true"
-            - name: NUM_GENERATORS
+              value: "notifications-service"
+            - name: FAILURE_RATE
+              value: "0.15"
+            - name: MIN_DELAY_SECONDS
+              value: "2"
+            - name: MAX_DELAY_SECONDS
               value: "5"
-            - name: NOTIFICATIONS_SERVICE_URL
-              value: "http://notifications-service:8081"
           livenessProbe:
             httpGet:
               path: /health
@@ -89,11 +73,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
+              memory: "64Mi"
+              cpu: "50m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "256Mi"
+              cpu: "250m"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -106,10 +90,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sign-in-service
+  name: notifications-service
   namespace: o11y-k8s-talk
   labels:
-    app: sign-in-service
+    app: notifications-service
     component: service
     owner: merchant-team
     business_unit: merchant
@@ -117,9 +101,9 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: sign-in-service
+    app: notifications-service
   ports:
     - name: http
-      port: 8080
+      port: 8081
       targetPort: http
       protocol: TCP

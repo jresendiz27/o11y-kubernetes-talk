@@ -1,10 +1,13 @@
 package generator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -12,8 +15,10 @@ import (
 	"github.com/jaswdr/faker"
 	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/models"
 	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/repository"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -23,10 +28,12 @@ const (
 )
 
 type UserGenerator struct {
-	repo        *repository.UserRepository
-	faker       faker.Faker
-	tracer      trace.Tracer
-	logUserData bool
+	repo                    *repository.UserRepository
+	faker                   faker.Faker
+	tracer                  trace.Tracer
+	logUserData             bool
+	notificationsServiceURL string
+	httpClient              *http.Client
 }
 
 func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
@@ -35,11 +42,21 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 		logUserData = true
 	}
 
+	notifURL := os.Getenv("NOTIFICATIONS_SERVICE_URL")
+	if notifURL == "" {
+		notifURL = "http://notifications-service:8081"
+	}
+
 	return &UserGenerator{
-		repo:        repo,
-		faker:       faker.New(),
-		tracer:      otel.Tracer("sign-in-service"),
-		logUserData: logUserData,
+		repo:                    repo,
+		faker:                   faker.New(),
+		tracer:                  otel.Tracer("sign-in-service"),
+		logUserData:             logUserData,
+		notificationsServiceURL: notifURL,
+		httpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		},
 	}
 }
 
@@ -81,6 +98,70 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 		log.Printf("User inserted successfully, id: %d", user.ID)
 	}
 
+	// Send welcome email notification (fire-and-forget, do not fail user creation)
+	if err := g.sendWelcomeEmail(ctx, user); err != nil {
+		log.Printf("Failed to send welcome email notification for user %d: %v", user.ID, err)
+	}
+
+	return nil
+}
+
+// sendWelcomeEmail calls the notifications-service to emulate sending a welcome email.
+// Errors are logged but do not propagate -- notification failure must not block user creation.
+func (g *UserGenerator) sendWelcomeEmail(ctx context.Context, user *models.User) error {
+	ctx, span := g.tracer.Start(ctx, "send-welcome-email-notification")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("notification.type", "email"),
+		attribute.String("notification.recipient", user.Email),
+		attribute.Int("notification.user_id", user.ID),
+	)
+
+	payload := map[string]string{
+		"to":      user.Email,
+		"subject": "Welcome to our platform!",
+		"body":    fmt.Sprintf("Hello %s, welcome aboard!", user.Name),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to marshal notification payload")
+		return fmt.Errorf("failed to marshal notification payload: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/notifications/email", g.notificationsServiceURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create notification request")
+		return fmt.Errorf("failed to create notification request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	log.Printf("Sending welcome email notification for user %d to %s", user.ID, user.Email)
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "notification request failed")
+		return fmt.Errorf("notification request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("notification.response_status", resp.StatusCode))
+
+	if resp.StatusCode >= 400 {
+		errMsg := fmt.Sprintf("notifications-service returned status %d", resp.StatusCode)
+		span.RecordError(fmt.Errorf(errMsg))
+		span.SetStatus(codes.Error, errMsg)
+		log.Printf("Welcome email notification failed for user %d: %s", user.ID, errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	log.Printf("Welcome email notification sent for user %d", user.ID)
 	return nil
 }
 

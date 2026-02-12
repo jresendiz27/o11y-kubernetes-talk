@@ -10,6 +10,15 @@ apply_postgres:
 apply_sign_in_service:
 	kubectl apply -f sign-in-service/k8s-infra/deployment.yml
 
+apply_notifications_service:
+	kubectl apply -f notifications-service/k8s-infra/deployment.yml
+
+docker-build-notifications:
+	$(MAKE) -C notifications-service docker-build
+
+docker-push-notifications:
+	$(MAKE) -C notifications-service docker-push
+
 stop_cluster:
 	minikube stop
 
