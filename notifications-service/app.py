@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import time
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
 from opentelemetry import trace
@@ -12,6 +13,7 @@ from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace import StatusCode
 
@@ -52,8 +54,19 @@ logger = logging.getLogger(SERVICE_NAME)
 def init_tracer() -> TracerProvider:
     """Initialize the OTel tracer provider with OTLP HTTP exporter."""
     otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-    # The OTLP HTTP exporter expects the full base URL (scheme://host:port)
-    endpoint_url = f"{otel_endpoint}/v1/traces"
+
+    # Make OTLP endpoint robust for demos:
+    # - Accept values with or without scheme (collector:4318 vs http://collector:4318)
+    # - Accept values with or without the /v1/traces path
+    endpoint_candidate = otel_endpoint.strip()
+    parsed = urlparse(endpoint_candidate)
+    if not parsed.scheme:
+        endpoint_candidate = f"http://{endpoint_candidate}"
+
+    if endpoint_candidate.rstrip("/").endswith("/v1/traces"):
+        endpoint_url = endpoint_candidate.rstrip("/")
+    else:
+        endpoint_url = f"{endpoint_candidate.rstrip('/')}/v1/traces"
 
     # Platform-first approach:
     # - Allow OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES to drive service metadata.
@@ -68,11 +81,18 @@ def init_tracer() -> TracerProvider:
     resource = fallback_resource.merge(env_resource)  # env overrides fallbacks
 
     provider = TracerProvider(resource=resource)
-    exporter = OTLPSpanExporter(endpoint=endpoint_url)
-    provider.add_span_processor(BatchSpanProcessor(exporter))
+    try:
+        exporter = OTLPSpanExporter(endpoint=endpoint_url)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        logger.info("OpenTelemetry tracer initialized, endpoint: %s", endpoint_url)
+    except Exception as exc:
+        # If exporter can't be initialized (bad URL, missing deps, etc),
+        # do not crash the service: fall back to console exporter so traces
+        # still show up in logs for local debugging.
+        logger.warning("Failed to init OTLP exporter, falling back to console: %s", exc)
+        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
     trace.set_tracer_provider(provider)
 
-    logger.info("OpenTelemetry tracer initialized, endpoint: %s", otel_endpoint)
     return provider
 
 

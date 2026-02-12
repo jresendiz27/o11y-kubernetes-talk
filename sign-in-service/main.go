@@ -164,8 +164,11 @@ func initTracer(ctx context.Context) (func(context.Context) error, error) {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
+	// Avoid SchemaURL conflicts across different semconv versions.
+	// We intentionally keep the fallback resource schemaless so that env/detectors
+	// can provide (and own) the schema URL.
 	fallbackRes := resource.NewWithAttributes(
-		semconv.SchemaURL,
+		"",
 		semconv.ServiceName(serviceName),
 		semconv.ServiceVersion(serviceVersion),
 	)
