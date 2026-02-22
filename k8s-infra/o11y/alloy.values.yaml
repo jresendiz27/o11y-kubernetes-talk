@@ -51,6 +51,14 @@ alloy:
       }
 
       loki.process "k8s" {
+        stage.drop {
+          source = "service"
+          value = "unknown_service"
+        }
+        stage.drop {
+          source = "pod"
+          expression = "loki-canary*"
+        }
         stage.labels {
           values = {
             namespace = "namespace",

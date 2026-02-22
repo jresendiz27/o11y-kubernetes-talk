@@ -1,4 +1,5 @@
 loki:
+  auth_enabled: false # Single tenant mode
   commonConfig:
     replication_factor: 1
   storage:
@@ -17,8 +18,13 @@ loki:
   limits_config:
     allow_structured_metadata: true
     volume_enabled: true
-  ruler:
-    enable_api: true
+  ruler: # Disable for demo, no alerting
+    enable_api: false
+  rulerConfig:
+    storage:
+      type: local
+      local:
+        directory: /tmp/loki/rules
 
 minio:
   enabled: false
@@ -27,6 +33,15 @@ deploymentMode: SingleBinary
 
 singleBinary:
   replicas: 1
+#  initContainers:
+#    - name: fix-loki-permissions
+#      image: busybox
+#      command: ["sh", "-c", "mkdir -p /var/loki/rules && chown -R 10001:10001 /var/loki"]
+#      securityContext:
+#        runAsUser: 0
+#      volumeMounts:
+#        - name: storage
+#          mountPath: /var/loki
 
 # Zero out replica counts of other deployment modes
 backend:

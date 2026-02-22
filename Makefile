@@ -49,9 +49,11 @@ enable_docker_registry_port_forward: # Enable docker-registry connection to back
 	echo "----------"
 
 setup_volumes_path: # Configure volume path for persistent volume claim (in all minikube nodes)
+	# this is required for cluster-mode to be able to mount postgres and loki storage, we don't fully own which node will receive the statefulset so we create all the routes for all the nodes
 	@for node in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do \
   	 	echo "Creating directory on node: $$node"; \
   		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/"; \
+  		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/monitoring/storage-loki-0/ && sudo chmod 777 /tmp/hostpath-provisioner/monitoring/storage-loki-0/"; \
   	done; \
   	echo "Directories created on all nodes"
 
