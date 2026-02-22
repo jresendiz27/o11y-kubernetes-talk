@@ -1,4 +1,4 @@
-.PHONY: help start_cluster wipe_namespace apply_postgres apply_notifications_service apply_sign_in_service docker-build-notifications docker-push-notifications docker-build-sign-in docker-push-sign-in stop_cluster destroy_cluster enable_docker_registry_bg setup_volumes_path helm_repos o11y_up o11y_down o11y_port_forward linkerd_up linkerd_inject demo_up
+.PHONY: help start_cluster wipe_namespace apply_postgres apply_notifications_service apply_sign_in_service docker_build_notifications docker_push_notifications docker_build_sign_in docker_push_sign_in stop_cluster destroy_cluster enable_docker_registry_port_forward setup_volumes_path helm_repos o11y_up o11y_down enable_o11y_port_forward linkerd_up linkerd_inject demo_up
 
 GIT_SHA := $(shell git rev-parse --short HEAD)
 DEPLOY_ENV ?= development
@@ -13,46 +13,28 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-start_cluster:
+start_cluster: # Start minikube cluster
 	sh bin/start_minikube.sh
 
-wipe_namespace:
+enable_port_forwards: enable_o11y_port_forward enable_docker_registry_port_forward
+	@echo "Enabled port forward for registry and grafana"
+
+wipe_namespace: # Wipe o11y-k8s-talk namespace (Destructive!!)
 	kubectl delete namespace o11y-k8s-talk
 
-apply_postgres:
+apply_postgres: # Apply postgres stateful set and configurations
 	kubectl apply -f k8s-infra/postgres_database.yml
 
-apply_sign_in_service:
-	kubectl apply -f sign-in-service/k8s-infra/deployment.yml
+first_time_setup_cluster: start_cluster setup_volumes_path apply_postgres o11y_up linkerd_up linkerd_inject # Start the demo cluster the first time
+	@echo "Overall cluster started"
 
-apply_notifications_service:
-	kubectl apply -f notifications-service/k8s-infra/deployment.yml
-
-docker-build-notifications:
-	docker build -t notifications-service:latest notifications-service
-	docker tag notifications-service:latest localhost:5000/notifications-service:latest
-	docker tag notifications-service:latest localhost:5000/notifications-service:$(GIT_SHA)
-
-docker-push-notifications:
-	docker push localhost:5000/notifications-service:latest
-	docker push localhost:5000/notifications-service:$(GIT_SHA)
-
-docker-build-sign-in:
-	docker build -t sign-in-service:latest sign-in-service
-	docker tag sign-in-service:latest localhost:5000/sign-in-service:latest
-	docker tag sign-in-service:latest localhost:5000/sign-in-service:$(GIT_SHA)
-
-docker-push-sign-in:
-	docker push localhost:5000/sign-in-service:latest
-	docker push localhost:5000/sign-in-service:$(GIT_SHA)
-
-stop_cluster:
+stop_cluster: # Stop minikube cluster
 	minikube stop
 
-destroy_cluster:
+destroy_cluster: # Destroy minikube cluster
 	minikube delete
 
-enable_docker_registry_bg:
+enable_docker_registry_port_forward: # Enable docker-registry connection to background process
 	echo "----------"
 	echo "Attempting to enable minikube port-forward (Container Registry)"
 	@mkdir -p tmp
@@ -66,20 +48,49 @@ enable_docker_registry_bg:
 	fi
 	echo "----------"
 
-setup_volumes_path:
+setup_volumes_path: # Configure volume path for persistent volume claim (in all minikube nodes)
 	@for node in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do \
   	 	echo "Creating directory on node: $$node"; \
   		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/"; \
   	done; \
   	echo "Directories created on all nodes"
 
-helm_repos:
+#  Services
+
+apply_sign_in_service: # Apply mock sign-in service
+	kubectl apply -f sign-in-service/k8s-infra/deployment.yml
+
+apply_notifications_service: # Apply mock notifications-service
+	kubectl apply -f notifications-service/k8s-infra/deployment.yml
+
+docker_build_notifications: # Docker build notifications-service
+	docker build -t notifications-service:latest notifications-service
+	docker tag notifications-service:latest localhost:5000/notifications-service:latest
+	docker tag notifications-service:latest localhost:5000/notifications-service:$(GIT_SHA)
+
+docker_push_notifications: # Docker push notifications service to minikube registry
+	docker push localhost:5000/notifications-service:latest
+	docker push localhost:5000/notifications-service:$(GIT_SHA)
+
+docker_build_sign_in: # Docker build sign-in
+	docker build -t sign-in-service:latest sign-in-service
+	docker tag sign-in-service:latest localhost:5000/sign-in-service:latest
+	docker tag sign-in-service:latest localhost:5000/sign-in-service:$(GIT_SHA)
+
+docker_push_sign_in: # Docker push sign-in service to minikube registry
+	docker push localhost:5000/sign-in-service:latest
+	docker push localhost:5000/sign-in-service:$(GIT_SHA)
+
+
+## O11Y Stack
+
+helm_repos: # Add prometheus, grafana and grafana community helm repositories
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo add grafana https://grafana.github.io/helm-charts
 	helm repo add grafana-community https://grafana-community.github.io/helm-charts
 	helm repo update
 
-o11y_up: helm_repos
+o11y_up: helm_repos # Configure and up the o11y stack
 	kubectl create namespace $(O11Y_NS) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 		-n $(O11Y_NS) -f k8s-infra/o11y/kube-prometheus-stack.values.yaml
@@ -91,23 +102,33 @@ o11y_up: helm_repos
 		-n $(O11Y_NS) -f k8s-infra/o11y/alloy.values.yaml
 	kubectl apply -f k8s-infra/o11y/otel-collector-externalname.yaml
 
-o11y_down:
+o11y_down: # Stop the o11y stack
 	helm uninstall alloy -n $(O11Y_NS) || true
 	helm uninstall tempo -n $(O11Y_NS) || true
 	helm uninstall loki -n $(O11Y_NS) || true
 	helm uninstall kube-prometheus-stack -n $(O11Y_NS) || true
 
-o11y_port_forward:
-	@echo "Grafana: http://localhost:3000 (admin/admin)"
-	kubectl -n $(O11Y_NS) port-forward svc/kube-prometheus-stack-grafana 3000:80
+enable_o11y_port_forward: # Enable port-forward for grafana
+	echo "----------"
+	echo "Attempting to enable minikube port-forward (Grafana)"
+	@mkdir -p tmp
+	@if [ -f tmp/grafana-port-forward.pid ] && kill -0 "$$(cat tmp/grafana-port-forward.pid)" 2>/dev/null; then \
+		echo "Grafana port-forward already running (pid: $$(cat tmp/grafana-port-forward.pid))"; \
+	else \
+		echo "Starting Grafana port-forward in background..."; \
+		nohup kubectl port-forward -n $(O11Y_NS) svc/kube-prometheus-stack-grafana 3000:80 > tmp/grafana-port-forward.log 2>&1 & \
+		echo $$! > tmp/grafana-port-forward.pid; \
+		echo "Grafana port-forward started (pid: $$(cat tmp/grafana-port-forward.pid))"; \
+	fi
+	echo "----------"
 
-linkerd_up:
+linkerd_up: # Start linkerd service mesh
 	bash bin/linkerd_up.sh
 
-linkerd_inject:
+linkerd_inject: # Enable Linkerd inject to o11y-k8s-talk namespace
 	bash bin/linkerd_inject_ns.sh o11y-k8s-talk
 
-demo_up: start_cluster setup_volumes_path apply_postgres enable_docker_registry_bg docker-build-sign-in docker-push-sign-in docker-build-notifications docker-push-notifications apply_notifications_service apply_sign_in_service
+demo_up: docker_build_sign_in docker_push_sign_in docker_build_notifications docker_push_notifications apply_notifications_service apply_sign_in_service
 	@echo "Deploying SHA: $(GIT_SHA)"
 	kubectl -n o11y-k8s-talk set image deployment/notifications-service notifications-service=localhost:5000/notifications-service:$(GIT_SHA)
 	kubectl -n o11y-k8s-talk set image deployment/sign-in-service sign-in-service=localhost:5000/sign-in-service:$(GIT_SHA)
