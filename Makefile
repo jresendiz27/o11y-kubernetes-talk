@@ -101,7 +101,8 @@ o11y_up: helm_repos # Configure and up the o11y stack
 	helm upgrade --install tempo grafana-community/tempo \
 		-n $(O11Y_NS) -f k8s-infra/o11y/tempo.values.yaml
 	helm upgrade --install alloy grafana/alloy \
-		-n $(O11Y_NS) -f k8s-infra/o11y/alloy.values.yaml
+		-n $(O11Y_NS) -f k8s-infra/o11y/alloy.values.yaml \
+		--set-file alloy.configMap.content=k8s-infra/o11y/alloy.config.alloy
 	kubectl apply -f k8s-infra/o11y/otel-collector-externalname.yaml
 
 o11y_down: # Stop the o11y stack
@@ -111,8 +112,8 @@ o11y_down: # Stop the o11y stack
 	helm uninstall kube-prometheus-stack -n $(O11Y_NS) || true
 
 enable_o11y_port_forward: # Enable port-forward for grafana
-	echo "----------"
-	echo "Attempting to enable minikube port-forward (Grafana)"
+	@echo "----------"
+	@echo "Attempting to enable minikube port-forward (Grafana)"
 	@mkdir -p tmp
 	@if [ -f tmp/grafana-port-forward.pid ] && kill -0 "$$(cat tmp/grafana-port-forward.pid)" 2>/dev/null; then \
 		echo "Grafana port-forward already running (pid: $$(cat tmp/grafana-port-forward.pid))"; \
@@ -122,7 +123,7 @@ enable_o11y_port_forward: # Enable port-forward for grafana
 		echo $$! > tmp/grafana-port-forward.pid; \
 		echo "Grafana port-forward started (pid: $$(cat tmp/grafana-port-forward.pid))"; \
 	fi
-	echo "----------"
+	@echo "----------"
 
 linkerd_up: # Start linkerd service mesh
 	bash bin/linkerd_up.sh
