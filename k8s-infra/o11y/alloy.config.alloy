@@ -35,8 +35,41 @@ discovery.kubernetes "pods" {
 	role = "pod"
 }
 
+discovery.relabel "pods" {
+    targets = discovery.kubernetes.pods.targets
+
+    rule {
+        source_labels = [
+            "__meta_kubernetes_pod_label_app_kubernetes_io_name",
+            "__meta_kubernetes_pod_label_k8s_app",
+            "__meta_kubernetes_pod_label_app",
+        ]
+        separator = ""
+        regex = ""
+        action = "drop"
+    }
+
+	rule {
+	    source_labels = ["__meta_kubernetes_pod_label_app"]
+	    target_label = "app"
+	}
+	rule {
+	    source_labels = ["__meta_kubernetes_pod_label_component"]
+	    target_label = "component"
+	}
+	rule {
+	    source_labels = ["__meta_kubernetes_pod_label_owner"]
+	    target_label = "owner"
+	}
+	rule {
+	    source_labels = ["__meta_kubernetes_pod_label_business_unit"]
+	    target_label = "business_unit"
+	}
+
+}
+
 loki.source.kubernetes "pods" {
-	targets    = discovery.kubernetes.pods.targets
+	targets    = discovery.relabel.pods.output
 	forward_to = [loki.process.k8s.receiver]
 }
 

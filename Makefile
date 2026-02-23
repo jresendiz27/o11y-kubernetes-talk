@@ -125,6 +125,11 @@ enable_o11y_port_forward: # Enable port-forward for grafana
 	fi
 	@echo "----------"
 
+reload_alloy:
+	helm upgrade --install alloy grafana/alloy -n monitoring -f k8s-infra/o11y/alloy.values.yaml --set-file alloy.configMap.content=k8s-infra/o11y/alloy.config.alloy
+	kubectl rollout restart -n $(O11Y_NS) daemonset/alloy
+	kubectl rollout status -n $(O11Y_NS) daemonset/alloy
+
 linkerd_up: # Start linkerd service mesh
 	bash bin/linkerd_up.sh
 
