@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,14 +38,18 @@ var (
 func main() {
 	ctx := context.Background()
 
+	// Use JSON handler — matches notifications-service JSON format (time, level, msg + fields).
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	// Initialize OpenTelemetry
 	shutdown, err := initTracer(ctx)
 	if err != nil {
-		log.Fatalf("Failed to initialize tracer: %v", err)
+		slog.Error("Failed to initialize tracer", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := shutdown(ctx); err != nil {
-			log.Printf("Failed to shutdown tracer: %v", err)
+			slog.Error("Failed to shutdown tracer", "error", err)
 		}
 	}()
 
@@ -60,11 +64,12 @@ func main() {
 
 	db, err = database.New(ctx, dbConfig)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			log.Printf("Failed to close database: %v", err)
+			slog.Error("Failed to close database", "error", err)
 		}
 	}()
 
@@ -73,7 +78,8 @@ func main() {
 
 	// Ensure database schema
 	if err := userRepo.EnsureSchema(ctx); err != nil {
-		log.Fatalf("Failed to ensure database schema: %v", err)
+		slog.Error("Failed to ensure database schema", "error", err)
+		os.Exit(1)
 	}
 
 	// Create context with cancellation for generators
@@ -112,9 +118,10 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting %s on port %s", serviceName, port)
+		slog.Info("Starting service", "service", serviceName, "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			slog.Error("Server failed to start", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -123,7 +130,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server")
+	slog.Info("Shutting down server")
 
 	// Cancel generator context
 	cancelGen()
@@ -132,10 +139,11 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("Server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Server exited")
+	slog.Info("Server exited")
 }
 
 // initTracer initializes OpenTelemetry tracer
@@ -204,13 +212,13 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	// Check database health
 	if db != nil {
 		if err := db.HealthCheck(ctx); err != nil {
-			log.Printf("Database health check failed: %v", err)
+			slog.Error("Database health check failed", "error", err)
 			span.RecordError(err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			response := `{"status":"unhealthy","service":"sign-in-service","version":"1.0.0","error":"database_unavailable"}`
 			if _, writeErr := w.Write([]byte(response)); writeErr != nil {
-				log.Printf("Failed to write health response: %v", writeErr)
+				slog.Error("Failed to write health response", "error", writeErr)
 			}
 			return
 		}
@@ -221,10 +229,10 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	response := `{"status":"ok","service":"sign-in-service","version":"1.0.0"}`
 
 	if _, err := w.Write([]byte(response)); err != nil {
-		log.Printf("Failed to write health response: %v", err)
+		slog.Error("Failed to write health response", "error", err)
 	}
 
-	log.Printf("Health check completed")
+	slog.Info("Health check completed")
 }
 
 // helloHandler handles root requests
@@ -244,7 +252,7 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Simulate some processing
 	if err := processRequest(ctx, tracer); err != nil {
-		log.Printf("Failed to process request: %v", err)
+		slog.Error("Failed to process request", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -253,10 +261,10 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write([]byte("Hello, World from Sign-In Service!")); err != nil {
-		log.Printf("Failed to write hello response: %v", err)
+		slog.Error("Failed to write hello response", "error", err)
 	}
 
-	log.Printf("Hello request processed")
+	slog.Info("Hello request processed")
 }
 
 // processRequest simulates some processing with tracing

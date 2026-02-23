@@ -1,9 +1,11 @@
 """Notifications Service - Emulates email sending with OpenTelemetry tracing."""
 
+import json
 import logging
 import os
 import random
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request
@@ -22,29 +24,37 @@ SERVICE_VERSION = "1.0.0"
 
 # --- Logging setup -----------------------------------------------------------
 
-LOG_FORMAT = (
-    "%(asctime)s %(levelname)s [%(name)s] "
-    "[trace_id=%(otelTraceID)s span_id=%(otelSpanID)s] %(message)s"
-)
+class JSONFormatter(logging.Formatter):
+    """Structured JSON logs — same format as sign-in-service Go slog JSON output.
 
-
-class OTelLogFormatter(logging.Formatter):
-    """Inject OTel trace/span IDs into every log record."""
+    Output fields: time, level, msg, service, trace_id, span_id
+    Python WARNING is normalized to WARN to match Go slog convention.
+    """
 
     def format(self, record):
         span = trace.get_current_span()
         ctx = span.get_span_context() if span else None
-        if ctx and ctx.is_valid:
-            record.otelTraceID = format(ctx.trace_id, "032x")
-            record.otelSpanID = format(ctx.span_id, "016x")
-        else:
-            record.otelTraceID = "0" * 32
-            record.otelSpanID = "0" * 16
-        return super().format(record)
+        trace_id = format(ctx.trace_id, "032x") if ctx and ctx.is_valid else "0" * 32
+        span_id = format(ctx.span_id, "016x") if ctx and ctx.is_valid else "0" * 16
+
+        # Normalize Python WARNING → WARN to match Go slog convention
+        level = "WARN" if record.levelname == "WARNING" else record.levelname
+
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        time_str = dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(record.msecs):03d}Z"
+
+        return json.dumps({
+            "time":     time_str,
+            "level":    level,
+            "msg":      record.getMessage(),
+            "service":  record.name,
+            "trace_id": trace_id,
+            "span_id":  span_id,
+        })
 
 
 handler = logging.StreamHandler()
-handler.setFormatter(OTelLogFormatter(LOG_FORMAT))
+handler.setFormatter(JSONFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(SERVICE_NAME)
 
