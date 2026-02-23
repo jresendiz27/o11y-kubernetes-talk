@@ -51,8 +51,12 @@ loki.process "k8s" {
 	}
 
 	stage.drop {
-		source = "service"
-		value  = "unknown_service"
+	    expression = "Health check completed"
+	}
+
+	stage.drop {
+	    source = "service_name"
+	    value = "unknown_service"
 	}
 
 	stage.drop {
@@ -61,8 +65,7 @@ loki.process "k8s" {
 	}
 
 	stage.drop {
-	    source = "entry"
-	    expression = "canary-push*"
+	    expression = "canary-push"
 	}
 
 	forward_to = [loki.write.default.receiver]
