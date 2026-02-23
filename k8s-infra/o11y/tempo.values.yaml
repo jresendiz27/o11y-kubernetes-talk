@@ -10,5 +10,29 @@ tempo:
         http:
           endpoint: 0.0.0.0:4318
 
+  # Enable TraceQL metrics support.
+  # Grafana TraceQL metrics queries (e.g. `{ } | rate()`) require the metrics-generator.
+  # When it isn't running/registered, Grafana/Tempo errors with "Error finding generators: empty ring".
+  overrides:
+    defaults:
+      metrics_generator:
+        processors: [local-blocks]
+
+  metrics_generator:
+    ring:
+      kvstore:
+        # Single-binary/minikube-friendly (no gossip/etcd/consul).
+        store: inmemory
+    traces_storage:
+      # Required WAL path for generator trace blocks.
+      path: /tmp/tempo/generator/traces
+    storage:
+      # Required WAL path for generator metrics registry.
+      path: /tmp/tempo/generator/wal
+    processor:
+      local_blocks:
+        # For demos, allow client spans too (not only server spans).
+        filter_server_spans: false
+
 service:
   type: ClusterIP
