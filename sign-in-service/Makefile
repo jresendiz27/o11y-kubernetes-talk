@@ -19,7 +19,7 @@ fmt: ## Format code
 	go fmt ./...
 
 lint: ## Run linter
-	golangci-lint run
+	golangci-lint run ./...
 
 tidy: ## Tidy go modules
 	go mod tidy

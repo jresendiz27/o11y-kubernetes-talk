@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/database"
 	"github.com/jresendiz/o11y-kubernetes-talk/sign-in-service/internal/models"
@@ -45,7 +45,7 @@ func (r *UserRepository) EnsureSchema(ctx context.Context) error {
 		return fmt.Errorf("failed to create users table: %w", err)
 	}
 
-	log.Println("Users table schema ensured")
+	slog.Info("Users table schema ensured")
 	return nil
 }
 

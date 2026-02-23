@@ -5,7 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -48,9 +49,9 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 		if parsed, err := strconv.ParseFloat(val, 64); err == nil && parsed >= 0 && parsed <= 1 {
 			failureRate = parsed
 		} else if err != nil {
-			log.Printf("Invalid FAILURE_RATE %q, using 0.0: %v", val, err)
+			slog.Info("Invalid FAILURE_RATE %q, using 0.0: %v", val, err)
 		} else {
-			log.Printf("FAILURE_RATE out of range %q, using 0.0 (expected 0..1)", val)
+			slog.Info("FAILURE_RATE out of range %q, using 0.0 (expected 0..1)", val)
 		}
 	}
 
@@ -88,7 +89,7 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 			attribute.Bool("sign_in.simulated_failure", true),
 			attribute.Float64("sign_in.failure_rate", g.failureRate),
 		)
-		log.Printf("Failed to generate user (simulated): %v", err)
+		slog.Error(fmt.Sprintf("Failed to generate user (simulated): %v", err))
 		return err
 	}
 
@@ -114,21 +115,21 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 	err := g.repo.CreateUser(ctx, user)
 	if err != nil {
 		span.RecordError(err)
-		log.Printf("Failed to insert user: %v", err)
+		slog.Error(fmt.Sprintf("Failed to insert user: %v", err))
 		return err
 	}
 
-	// Conditional logging based on LOG_USER_DATA environment variable
+	// Conditional logging based on the LOG_USER_DATA environment variable
 	if g.logUserData {
-		log.Printf("User inserted successfully, email: %s, name: %s, phone: %s, address: %s",
-			user.Email, user.Name, user.Phone, user.Address)
+		slog.Info(fmt.Sprintf("User inserted successfully, email: %s, name: %s, phone: %s, address: %s",
+			user.Email, user.Name, user.Phone, user.Address))
 	} else {
-		log.Printf("User inserted successfully, id: %d", user.ID)
+		slog.Info(fmt.Sprintf("User inserted successfully, id: %d", user.ID))
 	}
 
 	// Send welcome email notification (fire-and-forget, do not fail user creation)
 	if err := g.sendWelcomeEmail(ctx, user); err != nil {
-		log.Printf("Failed to send welcome email notification for user %d: %v", user.ID, err)
+		slog.Info(fmt.Sprintf("Failed to send welcome email notification for user %d: %v", user.ID, err))
 	}
 
 	return nil
@@ -169,7 +170,7 @@ func (g *UserGenerator) sendWelcomeEmail(ctx context.Context, user *models.User)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Printf("Sending welcome email notification for user %d to %s", user.ID, user.Email)
+	slog.Info("Sending welcome email notification for user %d to %s", user.ID, user.Email)
 
 	resp, err := g.httpClient.Do(req)
 	if err != nil {
@@ -185,36 +186,36 @@ func (g *UserGenerator) sendWelcomeEmail(ctx context.Context, user *models.User)
 		errMsg := fmt.Sprintf("notifications-service returned status %d", resp.StatusCode)
 		span.RecordError(fmt.Errorf(errMsg))
 		span.SetStatus(codes.Error, errMsg)
-		log.Printf("Welcome email notification failed for user %d: %s", user.ID, errMsg)
+		slog.Info("Welcome email notification failed for user %d: %s", user.ID, errMsg)
 		return fmt.Errorf(errMsg)
 	}
 
-	log.Printf("Welcome email notification sent for user %d", user.ID)
+	slog.Info("Welcome email notification sent for user %d", user.ID)
 	return nil
 }
 
 func (g *UserGenerator) StartGenerator(ctx context.Context, generatorID int) {
-	log.Printf("Starting user generator %d", generatorID)
+	slog.Info("Starting user generator %d", generatorID)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Stopping user generator %d", generatorID)
+			slog.Info("Stopping user generator %d", generatorID)
 			return
 		default:
 			// Random wait between 30s and 3 minutes
 			waitSeconds := rand.Intn(maxWaitSeconds-minWaitSeconds) + minWaitSeconds
-			log.Printf("Generator %d waiting %d seconds before next user creation", generatorID, waitSeconds)
+			slog.Info(fmt.Sprintf("Generator %d waiting %d seconds before next user creation", generatorID, waitSeconds))
 
 			timer := time.NewTimer(time.Duration(waitSeconds) * time.Second)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				log.Printf("Stopping user generator %d", generatorID)
+				slog.Info("Stopping user generator %d", generatorID)
 				return
 			case <-timer.C:
 				if err := g.GenerateAndInsertUser(ctx); err != nil {
-					log.Printf("Generator %d failed to generate user: %v", generatorID, err)
+					slog.Error("Generator %d failed to generate user: %v", generatorID, err)
 				}
 			}
 		}
@@ -232,7 +233,7 @@ func StartGenerators(ctx context.Context, repo *repository.UserRepository) {
 	// Seed global RNG once for non-deterministic demo behavior.
 	rand.Seed(time.Now().UnixNano())
 
-	log.Printf("Starting %d user generators", numGenerators)
+	slog.Info("Starting %d user generators", numGenerators)
 
 	generator := NewUserGenerator(repo)
 
