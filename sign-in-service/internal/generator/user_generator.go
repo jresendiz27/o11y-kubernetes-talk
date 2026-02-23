@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -49,9 +48,25 @@ func NewUserGenerator(repo *repository.UserRepository) *UserGenerator {
 		if parsed, err := strconv.ParseFloat(val, 64); err == nil && parsed >= 0 && parsed <= 1 {
 			failureRate = parsed
 		} else if err != nil {
-			slog.Info("Invalid FAILURE_RATE %q, using 0.0: %v", val, err)
+			slog.Info(
+				"Invalid FAILURE_RATE, using default",
+				"failure_rate_raw",
+				val,
+				"default_failure_rate",
+				0.0,
+				"error",
+				err,
+			)
 		} else {
-			slog.Info("FAILURE_RATE out of range %q, using 0.0 (expected 0..1)", val)
+			slog.Info(
+				"FAILURE_RATE out of range, using default",
+				"failure_rate_raw",
+				val,
+				"default_failure_rate",
+				0.0,
+				"expected_range",
+				"0..1",
+			)
 		}
 	}
 
@@ -89,7 +104,7 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 			attribute.Bool("sign_in.simulated_failure", true),
 			attribute.Float64("sign_in.failure_rate", g.failureRate),
 		)
-		slog.Error(fmt.Sprintf("Failed to generate user (simulated): %v", err))
+		slog.Error("Failed to generate user (simulated)", "error", err, "failure_rate", g.failureRate)
 		return err
 	}
 
@@ -97,7 +112,7 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 	address := g.faker.Address()
 	internet := g.faker.Internet()
 
-	var randEmail = fmt.Sprintf("%s_%d_%s", person.FirstName(), rand.Intn(100), internet.Email())
+	randEmail := fmt.Sprintf("%s_%d_%s", person.FirstName(), rand.Intn(100), internet.Email())
 
 	user := &models.User{
 		Email:        randEmail,
@@ -115,21 +130,32 @@ func (g *UserGenerator) GenerateAndInsertUser(ctx context.Context) error {
 	err := g.repo.CreateUser(ctx, user)
 	if err != nil {
 		span.RecordError(err)
-		slog.Error(fmt.Sprintf("Failed to insert user: %v", err))
+		slog.Error("Failed to insert user", "error", err)
 		return err
 	}
 
 	// Conditional logging based on the LOG_USER_DATA environment variable
 	if g.logUserData {
-		slog.Info(fmt.Sprintf("User inserted successfully, email: %s, name: %s, phone: %s, address: %s",
-			user.Email, user.Name, user.Phone, user.Address))
+		slog.Info(
+			"User inserted",
+			"user_id",
+			user.ID,
+			"user_email",
+			user.Email,
+			"user_name",
+			user.Name,
+			"user_phone",
+			user.Phone,
+			"user_address",
+			user.Address,
+		)
 	} else {
-		slog.Info(fmt.Sprintf("User inserted successfully, id: %d", user.ID))
+		slog.Info("User inserted", "user_id", user.ID)
 	}
 
 	// Send welcome email notification (fire-and-forget, do not fail user creation)
 	if err := g.sendWelcomeEmail(ctx, user); err != nil {
-		slog.Info(fmt.Sprintf("Failed to send welcome email notification for user %d: %v", user.ID, err))
+		slog.Info("Failed to send welcome email notification", "user_id", user.ID, "error", err)
 	}
 
 	return nil
@@ -170,7 +196,7 @@ func (g *UserGenerator) sendWelcomeEmail(ctx context.Context, user *models.User)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	slog.Info("Sending welcome email notification for user %d to %s", user.ID, user.Email)
+	slog.Info("Sending welcome email notification", "user_id", user.ID, "user_email", user.Email)
 
 	resp, err := g.httpClient.Do(req)
 	if err != nil {
@@ -178,44 +204,54 @@ func (g *UserGenerator) sendWelcomeEmail(ctx context.Context, user *models.User)
 		span.SetStatus(codes.Error, "notification request failed")
 		return fmt.Errorf("notification request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Warn("Failed to close notifications response body", "error", err)
+		}
+	}()
 
 	span.SetAttributes(attribute.Int("notification.response_status", resp.StatusCode))
 
 	if resp.StatusCode >= 400 {
-		errMsg := fmt.Sprintf("notifications-service returned status %d", resp.StatusCode)
-		span.RecordError(fmt.Errorf(errMsg))
-		span.SetStatus(codes.Error, errMsg)
-		slog.Info("Welcome email notification failed for user %d: %s", user.ID, errMsg)
-		return fmt.Errorf(errMsg)
+		statusErr := fmt.Errorf("notifications-service returned status %d", resp.StatusCode)
+		span.RecordError(statusErr)
+		span.SetStatus(codes.Error, statusErr.Error())
+		slog.Info("Welcome email notification failed", "user_id", user.ID, "error", statusErr)
+		return statusErr
 	}
 
-	slog.Info("Welcome email notification sent for user %d", user.ID)
+	slog.Info("Welcome email notification sent", "user_id", user.ID)
 	return nil
 }
 
 func (g *UserGenerator) StartGenerator(ctx context.Context, generatorID int) {
-	slog.Info("Starting user generator %d", generatorID)
+	slog.Info("Starting user generator", "generator_id", generatorID)
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("Stopping user generator %d", generatorID)
+			slog.Info("Stopping user generator", "generator_id", generatorID)
 			return
 		default:
 			// Random wait between 30s and 3 minutes
 			waitSeconds := rand.Intn(maxWaitSeconds-minWaitSeconds) + minWaitSeconds
-			slog.Info(fmt.Sprintf("Generator %d waiting %d seconds before next user creation", generatorID, waitSeconds))
+			slog.Info(
+				"Generator waiting before next user creation",
+				"generator_id",
+				generatorID,
+				"wait_seconds",
+				waitSeconds,
+			)
 
 			timer := time.NewTimer(time.Duration(waitSeconds) * time.Second)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				slog.Info("Stopping user generator %d", generatorID)
+				slog.Info("Stopping user generator", "generator_id", generatorID)
 				return
 			case <-timer.C:
 				if err := g.GenerateAndInsertUser(ctx); err != nil {
-					slog.Error("Generator %d failed to generate user: %v", generatorID, err)
+					slog.Error("Generator failed to generate user", "generator_id", generatorID, "error", err)
 				}
 			}
 		}
@@ -230,10 +266,9 @@ func StartGenerators(ctx context.Context, repo *repository.UserRepository) {
 		}
 	}
 
-	// Seed global RNG once for non-deterministic demo behavior.
-	rand.Seed(time.Now().UnixNano())
-
-	slog.Info("Starting %d user generators", numGenerators)
+	// As of Go 1.20+, the default math/rand global source is seeded automatically.
+	// Avoid calling rand.Seed to satisfy staticcheck and keep demo randomness.
+	slog.Info("Starting user generators", "num_generators", numGenerators)
 
 	generator := NewUserGenerator(repo)
 

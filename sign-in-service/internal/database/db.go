@@ -67,7 +67,15 @@ func New(ctx context.Context, cfg Config) (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	slog.Info("Database connection established successfully to %s:%s/%s", cfg.Host, cfg.Port, cfg.DBName)
+	slog.Info(
+		"Database connection established",
+		"db_host",
+		cfg.Host,
+		"db_port",
+		cfg.Port,
+		"db_name",
+		cfg.DBName,
+	)
 
 	return &Database{
 		DB:     db,
