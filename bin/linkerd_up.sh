@@ -25,6 +25,9 @@ else
   echo "Installing Linkerd control-plane..."
   linkerd --set proxyInit.runAsRoot=true install | kubectl apply -f -
 
+  echo "Installing linkerd dashboard viz ... "
+  linkerd --set proxyInit.runAsRoot=true viz install | kubectl apply -f - # install the on-cluster metrics stack
+
   echo "Waiting for Linkerd to become ready..."
   linkerd check
 

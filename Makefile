@@ -16,9 +16,6 @@ help: ## Show this help message
 start_cluster: # Start minikube cluster
 	sh bin/start_minikube.sh
 
-enable_port_forwards: enable_o11y_port_forward enable_docker_registry_port_forward
-	@echo "Enabled port forward for registry and grafana"
-
 wipe_namespace: # Wipe o11y-k8s-talk namespace (Destructive!!)
 	kubectl delete namespace o11y-k8s-talk
 
@@ -33,20 +30,6 @@ stop_cluster: # Stop minikube cluster
 
 destroy_cluster: # Destroy minikube cluster
 	minikube delete
-
-enable_docker_registry_port_forward: # Enable docker-registry connection to background process
-	echo "----------"
-	echo "Attempting to enable minikube port-forward (Container Registry)"
-	@mkdir -p tmp
-	@if [ -f tmp/registry-port-forward.pid ] && kill -0 "$$(cat tmp/registry-port-forward.pid)" 2>/dev/null; then \
-		echo "Registry port-forward already running (pid: $$(cat tmp/registry-port-forward.pid))"; \
-	else \
-		echo "Starting registry port-forward in background..."; \
-		nohup kubectl port-forward -n kube-system service/registry 5000:80 > tmp/registry-port-forward.log 2>&1 & \
-		echo $$! > tmp/registry-port-forward.pid; \
-		echo "Registry port-forward started (pid: $$(cat tmp/registry-port-forward.pid))"; \
-	fi
-	echo "----------"
 
 setup_volumes_path: # Configure volume path for persistent volume claim (in all minikube nodes)
 	# this is required for cluster-mode to be able to mount postgres and loki storage, we don't fully own which node will receive the statefulset so we create all the routes for all the nodes
@@ -83,7 +66,6 @@ docker_push_sign_in: # Docker push sign-in service to minikube registry
 	docker push localhost:5000/sign-in-service:latest
 	docker push localhost:5000/sign-in-service:$(GIT_SHA)
 
-
 ## O11Y Stack
 
 helm_repos: # Add prometheus, grafana and grafana community helm repositories
@@ -111,11 +93,30 @@ o11y_down: # Stop the o11y stack
 	helm uninstall loki -n $(O11Y_NS) || true
 	helm uninstall kube-prometheus-stack -n $(O11Y_NS) || true
 
+## Port Forwards
+
+enable_port_forwards: enable_o11y_port_forward enable_docker_registry_port_forward enable_alloy_port_forward enable_linkerd_viz_port_forward
+	@echo "Enabled port forward for registry and grafana"
+
+enable_docker_registry_port_forward: # Enable docker-registry connection to background process
+	echo "----------"
+	echo "Attempting to enable minikube port-forward (Container Registry)"
+	@mkdir -p tmp
+	@if [ -f tmp/registry-port-forward.pid ] && kill -0 "$$(cat tmp/registry-port-forward.pid)" 2>/dev/null; then \
+		echo "Registry port-forward already running (pid: $$(cat tmp/registry-port-forward.pid))"; \
+	else \
+		echo "Starting registry port-forward in background..."; \
+		nohup kubectl port-forward -n kube-system service/registry 5000:80 > tmp/registry-port-forward.log 2>&1 & \
+		echo $$! > tmp/registry-port-forward.pid; \
+		echo "Registry port-forward started (pid: $$(cat tmp/registry-port-forward.pid))"; \
+	fi
+	echo "----------"
+
 enable_o11y_port_forward: # Enable port-forward for grafana
 	@echo "----------"
 	@echo "Attempting to enable minikube port-forward (Grafana)"
 	@mkdir -p tmp
-	@if [ -f tmp/grafana-port-forward.pid ] && kill -0 "$$(cat tmp/grafana-port-forward.pid)" 2>/dev/null; then \
+	@if [ -f tmp/grafana-port-forward.pid ] && kill -0 "$$(cat tmp/grafana-port-forward.pid)" 2> /dev/null; then \
 		echo "Grafana port-forward already running (pid: $$(cat tmp/grafana-port-forward.pid))"; \
 	else \
 		echo "Starting Grafana port-forward in background..."; \
@@ -124,6 +125,33 @@ enable_o11y_port_forward: # Enable port-forward for grafana
 		echo "Grafana port-forward started (pid: $$(cat tmp/grafana-port-forward.pid))"; \
 	fi
 	@echo "----------"
+
+enable_alloy_port_forward:
+	@echo "-----------"
+	@echo "Attempting to enable minikube port-forward (alloy)"
+	@mkdir -p tmp
+	@if [ -f tmp/alloy-port-forward.pid ] && kill -0 "$$(cat tmp/alloy-port-forward.pid)" 2> /dev/null; then \
+  		echo "Alloy port-forward already running (pid: $$(cat tmp/alloy-port-forward.pid))"; \
+	else \
+	  echo "Starting alloy port-forward in background ..."; \
+	  nohup kubectl port-forward -n $(O11Y_NS) svc/alloy 12345:12345 > tmp/alloy-port-forward.log 2>&1 & \
+	  echo $$! > tmp/alloy-port-forward.pid; \
+	  echo "Alloy port-forward started (pid: $$(cat tmp/alloy-port-forward.pid))"; \
+	fi
+	@echo "-----------"
+
+enable_linkerd_viz_port_forward:
+	@echo "-----------"
+	@echo "Attempting to enable minikube port-forward (linkerd-viz)"
+	@mkdir -p tmp
+	@if [ -f tmp/linkerd-viz-port-forward.pid ] && kill -0 "$$(cat tmp/linkerd-viz-port-forward.pid)" 2> /dev/null; then \
+  		echo "Linkerd-Viz already running (pid: $$(cat tmp/linkerd-viz-port-forward.pid))"; \
+	else \
+		echo "Starting linkerd-viz port-forward in background ..."; \
+		nohup kubectl port-forward -n linkerd-viz services/web 8084:8084 > tmp/linkerd-viz-port-forward.log 2>&1 & \
+		echo $$! > tmp/linkerd-viz-port-forward.pid; \
+		echo "Linkerd-viz port-forward started (pid: $$(cat tmp/linkerd-viz-port-forward.pid))"; \
+    fi
 
 reload_alloy:
 	helm upgrade --install alloy grafana/alloy -n monitoring -f k8s-infra/o11y/alloy.values.yaml --set-file alloy.configMap.content=k8s-infra/o11y/alloy.config.alloy

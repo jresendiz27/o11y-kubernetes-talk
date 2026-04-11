@@ -74,3 +74,4 @@ llm_context/
 
 ./sign-in-service/bin/sign-in-service
 features_summaries/*
+tmp/

@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: o11y-k8s-talk
+  name: notifications
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: notifications-service
-  namespace: o11y-k8s-talk
+  namespace: notifications
   labels:
     app: notifications-service
     component: service
@@ -93,7 +93,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: notifications-service
-  namespace: o11y-k8s-talk
+  namespace: notifications
   labels:
     app: notifications-service
     component: service
