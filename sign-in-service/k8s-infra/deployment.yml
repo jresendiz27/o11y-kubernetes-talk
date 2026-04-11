@@ -4,6 +4,21 @@ metadata:
   name: sign-in
 
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: sign-in
+  labels:
+    app: postgres-database
+    component: database
+    part-of: o11y-k8s-talk
+type: Opaque
+data:
+  POSTGRES_USER: ZGVtbw==
+  POSTGRES_PASSWORD: YV9zdXBlcl9zZWN1cmVfcGFzc3dvcmQ=
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,13 +61,13 @@ spec:
             - name: PORT
               value: "8080"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "otel-collector:4318"
+              value: "alloy.monitoring.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME
               value: "sign-in-service"
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "service.version=dev,vcs.revision=dev,deployment.environment=development"
             - name: DB_HOST
-              value: "postgres"
+              value: "postgres.databases.svc.cluster.local"
             - name: DB_PORT
               value: "5432"
             - name: DB_USER
@@ -72,7 +87,7 @@ spec:
             - name: NUM_GENERATORS
               value: "5"
             - name: NOTIFICATIONS_SERVICE_URL
-              value: "http://notifications-service:8081"
+              value: "http://notifications-service.notifications.svc.cluster.local:8081"
             - name: FAILURE_RATE
               value: "0"
           livenessProbe:

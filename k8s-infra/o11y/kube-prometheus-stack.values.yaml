@@ -14,12 +14,25 @@ grafana:
       url: http://loki.monitoring.svc.cluster.local:3100
       jsonData:
         maxLines: 1000
+        derivedFields:
+          - datasourceUid: tempo
+            matcherRegex: "\"trace_id\":\"(\\w+)\""
+            name: TraceID
+            url: "$${__value.raw}"
     - name: Tempo
       type: tempo
+      uid: tempo
       access: proxy
       url: http://tempo.monitoring.svc.cluster.local:3200
       jsonData:
         httpMethod: GET
+        tracesToLogs:
+          datasourceUid: loki
+          filterByTraceID: true
+          filterBySpanID: false
+          tags:
+            - key: namespace
+            - key: app
 
 prometheus:
   prometheusSpec:

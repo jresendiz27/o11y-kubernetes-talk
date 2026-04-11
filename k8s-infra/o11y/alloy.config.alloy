@@ -110,6 +110,26 @@ loki.process "k8s" {
 		expression = "canary-push"
 	}
 
+	// --- PII Filtering: Pattern-based masking ---
+	// Scans the ENTIRE log line (JSON or not) for PII patterns and masks them.
+	// This catches PII regardless of field names or log format.
+	// Email: matches user@domain.tld anywhere in the log line
+	stage.replace {
+		expression = "[\\w\\-\\.]+@([\\w-]+\\.)+[\\w-]{2,}"
+		replace    = "[EMAIL_REDACTED]"
+	}
+
+	stage.replace {
+		expression = "(\\+\\d{1,3}\\s*)?\\(?\\d{3}\\)?[\\s\\-]?\\d{3}[\\s\\-]?\\d{4}"
+		replace    = "[PHONE_REDACTED]"
+	}
+	// --- PII Filtering: Field dropping (specific known fields) ---
+	// Safety net: redact known sensitive fields by name, even if pattern regex misses them
+	stage.replace {
+		expression = "(\"user_address\":\")[^\"]*(\")";
+		replace    = "${1}[REDACTED]${2}"
+	}
+
 	forward_to = [loki.write.default.receiver]
 }
 

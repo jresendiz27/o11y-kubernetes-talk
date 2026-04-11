@@ -1,4 +1,4 @@
-.PHONY: help start_cluster wipe_namespace apply_postgres apply_notifications_service apply_sign_in_service docker_build_notifications docker_push_notifications docker_build_sign_in docker_push_sign_in stop_cluster destroy_cluster enable_docker_registry_port_forward setup_volumes_path helm_repos o11y_up o11y_down enable_o11y_port_forward linkerd_up linkerd_inject demo_up
+.PHONY: help start_cluster wipe_namespace apply_postgres apply_notifications_service apply_sign_in_service docker_build_notifications docker_push_notifications docker_build_sign_in docker_push_sign_in stop_cluster destroy_cluster enable_docker_registry_port_forward setup_volumes_path helm_repos o11y_up o11y_down enable_o11y_port_forward enable_port_forwards enable_alloy_port_forward enable_linkerd_viz_port_forward reload_alloy linkerd_up linkerd_inject demo_up
 
 GIT_SHA := $(shell git rev-parse --short HEAD)
 DEPLOY_ENV ?= development
@@ -16,8 +16,10 @@ help: ## Show this help message
 start_cluster: # Start minikube cluster
 	sh bin/start_minikube.sh
 
-wipe_namespace: # Wipe o11y-k8s-talk namespace (Destructive!!)
-	kubectl delete namespace o11y-k8s-talk
+wipe_namespace: # Wipe all demo namespaces (Destructive!!)
+	kubectl delete namespace sign-in || true
+	kubectl delete namespace notifications || true
+	kubectl delete namespace databases || true
 
 apply_postgres: # Apply postgres stateful set and configurations
 	kubectl apply -f k8s-infra/postgres_database.yml
@@ -35,7 +37,7 @@ setup_volumes_path: # Configure volume path for persistent volume claim (in all 
 	# this is required for cluster-mode to be able to mount postgres and loki storage, we don't fully own which node will receive the statefulset so we create all the routes for all the nodes
 	@for node in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do \
   	 	echo "Creating directory on node: $$node"; \
-  		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/o11y-k8s-talk/postgres-pvc/"; \
+  		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/databases/postgres-pvc/ && sudo chmod 777 /tmp/hostpath-provisioner/databases/postgres-pvc/"; \
   		minikube ssh -n "$$node" "sudo mkdir -p /tmp/hostpath-provisioner/monitoring/storage-loki-0/ && sudo chmod 777 /tmp/hostpath-provisioner/monitoring/storage-loki-0/"; \
   	done; \
   	echo "Directories created on all nodes"
@@ -85,7 +87,13 @@ o11y_up: helm_repos # Configure and up the o11y stack
 	helm upgrade --install alloy grafana/alloy \
 		-n $(O11Y_NS) -f k8s-infra/o11y/alloy.values.yaml \
 		--set-file alloy.configMap.content=k8s-infra/o11y/alloy.config.alloy
-	kubectl apply -f k8s-infra/o11y/otel-collector-externalname.yaml
+	# Services use FQDNs (alloy.monitoring.svc.cluster.local) for cross-namespace OTLP
+	# Provision Grafana dashboards via sidecar (label grafana_dashboard=1)
+	kubectl create configmap kcd-2026-dashboards -n $(O11Y_NS) \
+		--from-file=k8s-infra/o11y/dashboards/ \
+		--dry-run=client -o yaml | \
+		kubectl label --local -f - grafana_dashboard=1 -o yaml --dry-run=client | \
+		kubectl apply -f -
 
 o11y_down: # Stop the o11y stack
 	helm uninstall alloy -n $(O11Y_NS) || true
@@ -152,6 +160,7 @@ enable_linkerd_viz_port_forward:
 		echo $$! > tmp/linkerd-viz-port-forward.pid; \
 		echo "Linkerd-viz port-forward started (pid: $$(cat tmp/linkerd-viz-port-forward.pid))"; \
     fi
+	@echo "-----------"
 
 reload_alloy:
 	helm upgrade --install alloy grafana/alloy -n monitoring -f k8s-infra/o11y/alloy.values.yaml --set-file alloy.configMap.content=k8s-infra/o11y/alloy.config.alloy
@@ -161,20 +170,22 @@ reload_alloy:
 linkerd_up: # Start linkerd service mesh
 	bash bin/linkerd_up.sh
 
-linkerd_inject: # Enable Linkerd inject to o11y-k8s-talk namespace
-	bash bin/linkerd_inject_ns.sh o11y-k8s-talk
+linkerd_inject: # Enable Linkerd inject on all demo namespaces
+	bash bin/linkerd_inject_ns.sh sign-in
+	bash bin/linkerd_inject_ns.sh notifications
+	bash bin/linkerd_inject_ns.sh databases
 
 demo_up: docker_build_sign_in docker_push_sign_in docker_build_notifications docker_push_notifications apply_notifications_service apply_sign_in_service
 	@echo "Deploying SHA: $(GIT_SHA)"
-	kubectl -n o11y-k8s-talk set image deployment/notifications-service notifications-service=localhost:5000/notifications-service:$(GIT_SHA)
-	kubectl -n o11y-k8s-talk set image deployment/sign-in-service sign-in-service=localhost:5000/sign-in-service:$(GIT_SHA)
-	kubectl -n o11y-k8s-talk set env deployment/notifications-service \
+	kubectl -n notifications set image deployment/notifications-service notifications-service=localhost:5000/notifications-service:$(GIT_SHA)
+	kubectl -n sign-in set image deployment/sign-in-service sign-in-service=localhost:5000/sign-in-service:$(GIT_SHA)
+	kubectl -n notifications set env deployment/notifications-service \
 		OTEL_RESOURCE_ATTRIBUTES="service.version=$(GIT_SHA),vcs.revision=$(GIT_SHA),deployment.environment=$(DEPLOY_ENV)" \
 		FAILURE_RATE="$(FAILURE_RATE)" \
 		MIN_DELAY_SECONDS="$(MIN_DELAY_SECONDS)" \
 		MAX_DELAY_SECONDS="$(MAX_DELAY_SECONDS)"
-	kubectl -n o11y-k8s-talk set env deployment/sign-in-service \
+	kubectl -n sign-in set env deployment/sign-in-service \
 		OTEL_RESOURCE_ATTRIBUTES="service.version=$(GIT_SHA),vcs.revision=$(GIT_SHA),deployment.environment=$(DEPLOY_ENV)" \
 		FAILURE_RATE="$(FAILURE_RATE)"
-	kubectl -n o11y-k8s-talk rollout status deployment/notifications-service
-	kubectl -n o11y-k8s-talk rollout status deployment/sign-in-service
+	kubectl -n notifications rollout status deployment/notifications-service
+	kubectl -n sign-in rollout status deployment/sign-in-service
