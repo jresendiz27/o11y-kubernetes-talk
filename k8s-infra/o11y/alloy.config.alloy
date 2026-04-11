@@ -126,7 +126,7 @@ loki.process "k8s" {
 	// --- PII Filtering: Field dropping (specific known fields) ---
 	// Safety net: redact known sensitive fields by name, even if pattern regex misses them
 	stage.replace {
-		expression = "(\"user_address\":\")[^\"]*(\")";
+		expression = `("user_address":")[^"]*(")`
 		replace    = "${1}[REDACTED]${2}"
 	}
 
