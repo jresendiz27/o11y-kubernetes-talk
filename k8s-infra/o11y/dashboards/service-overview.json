@@ -68,7 +68,7 @@
       "targets": [
         {
           "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"sign-in|notifications|databases\"}[1h])",
-          "legendFormat": "{{namespace}}/{{container}}"
+          "legendFormat": "{{namespace}}/{{pod}}"
         }
       ]
     },
@@ -87,8 +87,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (namespace, container) (rate(container_cpu_usage_seconds_total{namespace=~\"sign-in|notifications|databases\", container!=\"\", container!=\"POD\"}[5m]))",
-          "legendFormat": "{{namespace}}/{{container}}"
+          "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"sign-in|notifications|databases\"}[5m]))",
+          "legendFormat": "{{namespace}}"
         }
       ]
     },
@@ -107,8 +107,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (namespace, container) (container_memory_working_set_bytes{namespace=~\"sign-in|notifications|databases\", container!=\"\", container!=\"POD\"})",
-          "legendFormat": "{{namespace}}/{{container}}"
+          "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"sign-in|notifications|databases\"})",
+          "legendFormat": "{{namespace}}"
         }
       ]
     },
